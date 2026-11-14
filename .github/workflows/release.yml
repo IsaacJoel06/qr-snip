@@ -1,0 +1,29 @@
+name: Release Extension Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  package-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Build Extension Archive
+        run: |
+          mkdir -p dist
+          zip -r dist/qr-snip.zip manifest.json background.js content.js content.css jsQR.min.js icons/ LICENSE README.md PRIVACY.md -x "*.git*"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/qr-snip.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "QR Snip",
+  "version": "1.1.0",
+  "description": "Snip and scan any QR code visible on webpages or images to safely open links or copy text.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "contextMenus",
+    "notifications"
+  ],
+  "action": {
+    "default_title": "QR Snip (Alt+Shift+Q)",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+Q"
+      },
+      "description": "Snip and scan visible QR code"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
