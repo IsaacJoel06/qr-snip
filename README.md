@@ -25,8 +25,11 @@ A fast, lightweight, privacy-focused WebExtension (Manifest V3) that scans any Q
 
 <!-- Add your screenshots here after capturing -->
 <div align="center">
-  <img <img width="1907" height="1382" alt="image" src="https://github.com/user-attachments/assets/241b7450-ccb2-4e38-a2db-ed5fd9c50bca" />
-/>
+  <img width="1907" height="1382" alt="image" src="https://github.com/user-attachments/assets/241b7450-ccb2-4e38-a2db-ed5fd9c50bca" />
+  <img width="1865" height="1384" alt="image" src="https://github.com/user-attachments/assets/c2827034-fb91-40c0-ba80-a84148e6a049" />
+  <img width="2560" height="1600" alt="Screenshot (91)" src="https://github.com/user-attachments/assets/c660c510-9187-463a-9c0b-2aef8381ee1d" />
+
+
 </div>
 
 ---
