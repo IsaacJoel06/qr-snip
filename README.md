@@ -15,7 +15,7 @@ A fast, lightweight, privacy-focused WebExtension (Manifest V3) that scans any Q
 - **100% Offline & Private:** Uses bundled `jsQR.min.js`. Never contacts remote servers, tracks analytics, or makes network requests.
 - **Security Warning Banner:** Flags URLs using unencrypted `http://`, internationalized/punycode lookalike domains, or URL shorteners (`bit.ly`, `tinyurl.com`, `t.co`, etc.) with a clear caution notice before opening.
 - **Dangerous Scheme Blocking:** Completely blocks `javascript:` and `data:` URLs from opening.
-- **Dark & Light Mode:** Seamlessly matches your operating system theme, with an interactive toggle switch (🌓 / 🌙 / ☀️) safely persisted in storage.
+- **Dark & Light Mode:** Seamlessly matches your operating system theme, with an interactive toggle switch, safely persisted in storage.
 - **Restricted Page Warnings:** Notifies you with friendly native alerts when triggered on restricted pages (e.g., `chrome://`, `about:`, Chrome Web Store, or Firefox Add-ons).
 - **Safe Link Handling:** Links are never opened automatically. Opening is strictly user-triggered.
 
