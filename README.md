@@ -25,7 +25,8 @@ A fast, lightweight, privacy-focused WebExtension (Manifest V3) that scans any Q
 
 <!-- Add your screenshots here after capturing -->
 <div align="center">
-  <img src="https://via.placeholder.com/800x450/0f172a/38bdf8?text=QR+Snip+Overlay+%26+Toast+Preview" alt="QR Snip Preview" width="700" />
+  <img <img width="1907" height="1382" alt="image" src="https://github.com/user-attachments/assets/241b7450-ccb2-4e38-a2db-ed5fd9c50bca" />
+/>
 </div>
 
 ---
