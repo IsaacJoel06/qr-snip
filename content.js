@@ -1,5 +1,6 @@
 /**
- * QR Snip - Content Script
+ * QR Snip - Content Script (Manifest V3 - Cross-Browser)
+ * Compatible with Chrome, Edge, and Firefox (128+).
  * Manages snipping overlay, screen coordinate cropping, local jsQR decoding,
  * context menu image scanning, security warning analysis, and the adaptive toast interface.
  */
@@ -11,14 +12,38 @@
   }
   window.__qrSnipLoaded = true;
 
+  // Cross-browser WebExtension API shim
+  const api = globalThis.browser ?? globalThis.chrome;
+
   // Active state references
   let activeOverlay = null;
   let activeToast = null;
   let cachedScreenshotUrl = null;
   let lastRightClickedElement = null;
 
+  // Safely access localStorage to prevent errors in private browsing or restricted iframes
+  function getStoredTheme() {
+    try {
+      return (typeof window !== 'undefined' && window.localStorage)
+        ? window.localStorage.getItem('qr_snip_theme') || 'auto'
+        : 'auto';
+    } catch {
+      return 'auto';
+    }
+  }
+
+  function setStoredTheme(theme) {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('qr_snip_theme', theme);
+      }
+    } catch {
+      // Gracefully ignore storage write failures
+    }
+  }
+
   // Track user theme preference: 'auto' (system), 'dark', or 'light'
-  let currentTheme = localStorage.getItem('qr_snip_theme') || 'auto';
+  let currentTheme = getStoredTheme();
 
   // Known URL Shortener domains
   const KNOWN_SHORTENERS = new Set([
@@ -38,7 +63,7 @@
   // Messaging & Initialization
   // -------------------------------------------------------------
 
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  api.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Health check from background
     if (request.action === 'PING') {
       sendResponse({ status: 'PONG' });
@@ -431,19 +456,27 @@
 
   async function copyText(text) {
     try {
-      await navigator.clipboard.writeText(text);
-      return true;
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
     } catch {
+      // Fallback below
+    }
+    try {
       const input = document.createElement('textarea');
       input.value = text;
       input.style.position = 'fixed';
       input.style.opacity = '0';
+      input.style.left = '-9999px';
       document.body.appendChild(input);
       input.focus();
       input.select();
       const ok = document.execCommand('copy');
       document.body.removeChild(input);
       return ok;
+    } catch {
+      return false;
     }
   }
 
@@ -505,7 +538,7 @@
       else if (currentTheme === 'dark') currentTheme = 'light';
       else currentTheme = 'auto';
 
-      localStorage.setItem('qr_snip_theme', currentTheme);
+      setStoredTheme(currentTheme);
       applyTheme(container, currentTheme);
       themeBtn.innerHTML = getThemeIcon(currentTheme);
     };
@@ -637,7 +670,14 @@
           </svg>
         `;
         openBtn.onclick = () => {
-          chrome.runtime.sendMessage({ action: 'OPEN_URL', url: info.href });
+          try {
+            const sendResult = api.runtime.sendMessage({ action: 'OPEN_URL', url: info.href });
+            if (sendResult && typeof sendResult.catch === 'function') {
+              sendResult.catch(() => {});
+            }
+          } catch (e) {
+            console.error('[QR Snip] Failed to send open link message:', e);
+          }
           cleanUpToast();
         };
 
@@ -687,18 +727,26 @@
       const retryBtn = document.createElement('button');
       retryBtn.className = 'qr-snip-btn qr-snip-btn-primary';
       retryBtn.innerHTML = `<span>Snip Tool</span>`;
-      retryBtn.onclick = () => {
+      retryBtn.onclick = async () => {
         cleanUpToast();
         if (cachedScreenshotUrl) {
           initSnippingOverlay(cachedScreenshotUrl);
         } else {
           // Request fresh screenshot
-          chrome.runtime.sendMessage({ action: 'REQUEST_RECAPTURE' }, (response) => {
+          try {
+            const response = await new Promise((resolve) => {
+              const res = api.runtime.sendMessage({ action: 'REQUEST_RECAPTURE' }, (r) => resolve(r));
+              if (res && typeof res.then === 'function') {
+                res.then(resolve).catch(() => resolve(null));
+              }
+            });
             if (response && response.screenshotUrl) {
               cachedScreenshotUrl = response.screenshotUrl;
               initSnippingOverlay(cachedScreenshotUrl);
             }
-          });
+          } catch {
+            // Recapture failed
+          }
         }
       };
 
