@@ -1,8 +1,9 @@
 /**
  * QR Snip - Content Script (Manifest V3 - Cross-Browser)
- * Compatible with Chrome, Edge, and Firefox (128+).
+ * Compatible with Chrome, Edge, and Firefox.
  * Manages snipping overlay, screen coordinate cropping, local jsQR decoding,
  * context menu image scanning, security warning analysis, and the adaptive toast interface.
+ * All DOM nodes are built safely without innerHTML / outerHTML / insertAdjacentHTML.
  */
 
 (() => {
@@ -21,10 +22,13 @@
   let cachedScreenshotUrl = null;
   let lastRightClickedElement = null;
 
-  // Safely access localStorage to prevent errors in private browsing or restricted iframes
+  // -------------------------------------------------------------
+  // Safe Storage Helper
+  // -------------------------------------------------------------
+
   function getStoredTheme() {
     try {
-      return (typeof window !== 'undefined' && window.localStorage)
+      return typeof window !== 'undefined' && window.localStorage
         ? window.localStorage.getItem('qr_snip_theme') || 'auto'
         : 'auto';
     } catch {
@@ -42,7 +46,6 @@
     }
   }
 
-  // Track user theme preference: 'auto' (system), 'dark', or 'light'
   let currentTheme = getStoredTheme();
 
   // Known URL Shortener domains
@@ -58,6 +61,185 @@
   document.addEventListener('contextmenu', (e) => {
     lastRightClickedElement = e.target;
   }, true);
+
+  // -------------------------------------------------------------
+  // Safe SVG Element Builders (No innerHTML)
+  // -------------------------------------------------------------
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function createSvg(width, height, viewBox = '0 0 24 24', stroke = 'currentColor', fill = 'none') {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('width', String(width));
+    svg.setAttribute('height', String(height));
+    svg.setAttribute('viewBox', viewBox);
+    svg.setAttribute('fill', fill);
+    svg.setAttribute('stroke', stroke);
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    return svg;
+  }
+
+  function createQrTargetSvg(width, height, stroke = 'currentColor') {
+    const svg = createSvg(width, height, '0 0 24 24', stroke);
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M4 7V4h3M20 7V4h-3M4 17v3h3M20 17v3h-3M9 9h6v6H9z');
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function createGlobeSvg() {
+    const svg = createSvg(15, 15);
+    const circle = document.createElementNS(SVG_NS, 'circle');
+    circle.setAttribute('cx', '12');
+    circle.setAttribute('cy', '12');
+    circle.setAttribute('r', '10');
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('x1', '2');
+    line.setAttribute('y1', '12');
+    line.setAttribute('x2', '22');
+    line.setAttribute('y2', '12');
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z');
+    svg.appendChild(circle);
+    svg.appendChild(line);
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function createExternalLinkSvg() {
+    const svg = createSvg(13, 13);
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6');
+    const polyline = document.createElementNS(SVG_NS, 'polyline');
+    polyline.setAttribute('points', '15 3 21 3 21 9');
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('x1', '10');
+    line.setAttribute('y1', '14');
+    line.setAttribute('x2', '21');
+    line.setAttribute('y2', '3');
+    svg.appendChild(path);
+    svg.appendChild(polyline);
+    svg.appendChild(line);
+    return svg;
+  }
+
+  function createWarningTriangleSvg() {
+    const svg = createSvg(18, 18);
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z');
+    const line1 = document.createElementNS(SVG_NS, 'line');
+    line1.setAttribute('x1', '12');
+    line1.setAttribute('y1', '9');
+    line1.setAttribute('x2', '12');
+    line1.setAttribute('y2', '13');
+    const line2 = document.createElementNS(SVG_NS, 'line');
+    line2.setAttribute('x1', '12');
+    line2.setAttribute('y1', '17');
+    line2.setAttribute('x2', '12.01');
+    line2.setAttribute('y2', '17');
+    svg.appendChild(path);
+    svg.appendChild(line1);
+    svg.appendChild(line2);
+    return svg;
+  }
+
+  function createDangerBlockSvg() {
+    const svg = createSvg(18, 18);
+    const circle = document.createElementNS(SVG_NS, 'circle');
+    circle.setAttribute('cx', '12');
+    circle.setAttribute('cy', '12');
+    circle.setAttribute('r', '10');
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('x1', '4.93');
+    line.setAttribute('y1', '4.93');
+    line.setAttribute('x2', '19.07');
+    line.setAttribute('y2', '19.07');
+    svg.appendChild(circle);
+    svg.appendChild(line);
+    return svg;
+  }
+
+  function createAlertCircleSvg() {
+    const svg = createSvg(20, 20);
+    const circle = document.createElementNS(SVG_NS, 'circle');
+    circle.setAttribute('cx', '12');
+    circle.setAttribute('cy', '12');
+    circle.setAttribute('r', '10');
+    const line1 = document.createElementNS(SVG_NS, 'line');
+    line1.setAttribute('x1', '12');
+    line1.setAttribute('y1', '8');
+    line1.setAttribute('x2', '12');
+    line1.setAttribute('y2', '12');
+    const line2 = document.createElementNS(SVG_NS, 'line');
+    line2.setAttribute('x1', '12');
+    line2.setAttribute('y1', '16');
+    line2.setAttribute('x2', '12.01');
+    line2.setAttribute('y2', '16');
+    svg.appendChild(circle);
+    svg.appendChild(line1);
+    svg.appendChild(line2);
+    return svg;
+  }
+
+  function createThemeIcon(theme) {
+    if (theme === 'dark') {
+      // Moon
+      const svg = createSvg(14, 14);
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z');
+      svg.appendChild(path);
+      return svg;
+    }
+    if (theme === 'light') {
+      // Sun
+      const svg = createSvg(14, 14);
+      const circle = document.createElementNS(SVG_NS, 'circle');
+      circle.setAttribute('cx', '12');
+      circle.setAttribute('cy', '12');
+      circle.setAttribute('r', '5');
+      svg.appendChild(circle);
+      const lines = [
+        ['12', '1', '12', '3'],
+        ['12', '21', '12', '23'],
+        ['4.22', '4.22', '5.64', '5.64'],
+        ['18.36', '18.36', '19.78', '19.78'],
+        ['1', '12', '3', '12'],
+        ['21', '12', '23', '12'],
+        ['4.22', '19.78', '5.64', '18.36'],
+        ['18.36', '5.64', '19.78', '4.22']
+      ];
+      for (const [x1, y1, x2, y2] of lines) {
+        const line = document.createElementNS(SVG_NS, 'line');
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        svg.appendChild(line);
+      }
+      return svg;
+    }
+    // Auto / System icon (circle half filled)
+    const svg = createSvg(14, 14);
+    const circle = document.createElementNS(SVG_NS, 'circle');
+    circle.setAttribute('cx', '12');
+    circle.setAttribute('cy', '12');
+    circle.setAttribute('r', '10');
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M12 2a10 10 0 0 1 0 20z');
+    path.setAttribute('fill', 'currentColor');
+    svg.appendChild(circle);
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function updateThemeButton(btn, theme) {
+    while (btn.firstChild) {
+      btn.removeChild(btn.firstChild);
+    }
+    btn.appendChild(createThemeIcon(theme));
+  }
 
   // -------------------------------------------------------------
   // Messaging & Initialization
@@ -103,27 +285,39 @@
     const overlay = document.createElement('div');
     overlay.className = 'qr-snip-overlay';
 
+    // Guide badge built safely
     const guideBadge = document.createElement('div');
     guideBadge.className = 'qr-snip-guide-badge';
-    guideBadge.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 7V4h3M20 7V4h-3M4 17v3h3M20 17v3h-3M9 9h6v6H9z"/>
-      </svg>
-      <span>Drag a box over the QR code</span>
-      <kbd>Esc</kbd> <span>to cancel</span>
-    `;
+
+    const badgeIcon = createQrTargetSvg(14, 14, 'currentColor');
+    guideBadge.appendChild(badgeIcon);
+
+    const badgeText1 = document.createElement('span');
+    badgeText1.textContent = 'Drag a box over the QR code';
+    guideBadge.appendChild(badgeText1);
+
+    const kbd = document.createElement('kbd');
+    kbd.textContent = 'Esc';
+    guideBadge.appendChild(kbd);
+
+    const badgeText2 = document.createElement('span');
+    badgeText2.textContent = 'to cancel';
+    guideBadge.appendChild(badgeText2);
+
     overlay.appendChild(guideBadge);
 
+    // Draggable selection box with viewfinder corners built safely
     const selectionBox = document.createElement('div');
     selectionBox.className = 'qr-snip-selection-box';
-    selectionBox.innerHTML = `
-      <div class="qr-snip-corner qr-snip-corner-tl"></div>
-      <div class="qr-snip-corner qr-snip-corner-tr"></div>
-      <div class="qr-snip-corner qr-snip-corner-bl"></div>
-      <div class="qr-snip-corner qr-snip-corner-br"></div>
-    `;
-    overlay.appendChild(selectionBox);
 
+    const corners = ['tl', 'tr', 'bl', 'br'];
+    for (const c of corners) {
+      const corner = document.createElement('div');
+      corner.className = `qr-snip-corner qr-snip-corner-${c}`;
+      selectionBox.appendChild(corner);
+    }
+
+    overlay.appendChild(selectionBox);
     document.body.appendChild(overlay);
     activeOverlay = overlay;
 
@@ -501,6 +695,7 @@
 
   /**
    * Displays the toast notification with decoded QR content, safety alerts, or failure feedback.
+   * Built entirely using standard DOM APIs without innerHTML.
    */
   function showResultToast(result) {
     cleanUpToast();
@@ -518,21 +713,19 @@
 
     const titleBox = document.createElement('div');
     titleBox.className = 'qr-snip-toast-title';
-    titleBox.innerHTML = `
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 7V4h3M20 7V4h-3M4 17v3h3M20 17v3h-3M9 9h6v6H9z"/>
-      </svg>
-      <span>QR Snip</span>
-    `;
+    titleBox.appendChild(createQrTargetSvg(18, 18, '#38bdf8'));
+    const titleText = document.createElement('span');
+    titleText.textContent = 'QR Snip';
+    titleBox.appendChild(titleText);
 
     const controls = document.createElement('div');
     controls.className = 'qr-snip-toast-controls';
 
-    // Theme toggle button (switches between auto, dark, and light)
+    // Theme toggle button
     const themeBtn = document.createElement('button');
     themeBtn.className = 'qr-snip-icon-btn';
     themeBtn.setAttribute('title', 'Toggle Dark/Light Mode');
-    themeBtn.innerHTML = getThemeIcon(currentTheme);
+    updateThemeButton(themeBtn, currentTheme);
     themeBtn.onclick = () => {
       if (currentTheme === 'auto') currentTheme = 'dark';
       else if (currentTheme === 'dark') currentTheme = 'light';
@@ -540,7 +733,7 @@
 
       setStoredTheme(currentTheme);
       applyTheme(container, currentTheme);
-      themeBtn.innerHTML = getThemeIcon(currentTheme);
+      updateThemeButton(themeBtn, currentTheme);
     };
 
     // Close button
@@ -568,90 +761,114 @@
 
       if (info.isBlocked) {
         // --- Case 1: Dangerous Protocol Blocked (javascript:, data:) ---
-        body.innerHTML = `
-          <div class="qr-snip-danger-banner">
-            <span class="qr-snip-danger-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
-              </svg>
-            </span>
-            <div>
-              <strong>Blocked Dangerous Link (${escapeHtml(info.protocol)}:)</strong>
-              <div style="margin-top: 3px;">
-                Links with <code>${escapeHtml(info.protocol)}:</code> can execute malicious scripts or load dangerous payloads and have been blocked.
-              </div>
-            </div>
-          </div>
-          <div style="margin-top: 10px;">
-            <div class="qr-snip-url-full">${escapeHtml(info.raw)}</div>
-          </div>
-        `;
+        const dangerBanner = document.createElement('div');
+        dangerBanner.className = 'qr-snip-danger-banner';
+
+        const dangerIconSpan = document.createElement('span');
+        dangerIconSpan.className = 'qr-snip-danger-icon';
+        dangerIconSpan.appendChild(createDangerBlockSvg());
+        dangerBanner.appendChild(dangerIconSpan);
+
+        const dangerTextDiv = document.createElement('div');
+        const strongHeading = document.createElement('strong');
+        strongHeading.textContent = `Blocked Dangerous Link (${info.protocol}:)`;
+        dangerTextDiv.appendChild(strongHeading);
+
+        const descDiv = document.createElement('div');
+        descDiv.style.marginTop = '3px';
+        descDiv.appendChild(document.createTextNode('Links with '));
+        const codeProtocol = document.createElement('code');
+        codeProtocol.textContent = `${info.protocol}:`;
+        descDiv.appendChild(codeProtocol);
+        descDiv.appendChild(document.createTextNode(' can execute malicious scripts or load dangerous payloads and have been blocked.'));
+        dangerTextDiv.appendChild(descDiv);
+
+        dangerBanner.appendChild(dangerTextDiv);
+        body.appendChild(dangerBanner);
+
+        const fullUrlContainer = document.createElement('div');
+        fullUrlContainer.style.marginTop = '10px';
+        const fullUrlDiv = document.createElement('div');
+        fullUrlDiv.className = 'qr-snip-url-full';
+        fullUrlDiv.textContent = info.raw;
+        fullUrlContainer.appendChild(fullUrlDiv);
+        body.appendChild(fullUrlContainer);
 
         // Only allow copying text, never opening
         const copyBtn = document.createElement('button');
         copyBtn.className = 'qr-snip-btn qr-snip-btn-secondary';
-        copyBtn.innerHTML = `<span>Copy content</span>`;
+        const copySpan = document.createElement('span');
+        copySpan.textContent = 'Copy content';
+        copyBtn.appendChild(copySpan);
         copyBtn.onclick = async () => {
           await copyText(info.raw);
           copyBtn.classList.add('qr-snip-btn-copied');
-          copyBtn.innerHTML = `<span>Copied!</span>`;
+          copySpan.textContent = 'Copied!';
           setTimeout(() => {
             copyBtn.classList.remove('qr-snip-btn-copied');
-            copyBtn.innerHTML = `<span>Copy content</span>`;
+            copySpan.textContent = 'Copy content';
           }, 2000);
         };
         actions.appendChild(copyBtn);
 
       } else if (info.isUrl) {
         // --- Case 2: URL Result (with safety warnings if detected) ---
-        let warningHtml = '';
+        const domainDiv = document.createElement('div');
+        domainDiv.className = 'qr-snip-url-domain';
+        domainDiv.appendChild(createGlobeSvg());
+
+        const domainStrong = document.createElement('strong');
+        domainStrong.textContent = info.domain;
+        domainDiv.appendChild(domainStrong);
+        body.appendChild(domainDiv);
+
+        const fullUrlDiv = document.createElement('div');
+        fullUrlDiv.className = 'qr-snip-url-full';
+        fullUrlDiv.setAttribute('title', info.href);
+        fullUrlDiv.textContent = info.href;
+        body.appendChild(fullUrlDiv);
+
         if (info.hasWarnings) {
-          const listItems = info.warnings
-            .map((w) => `<li><strong>${escapeHtml(w.title)}:</strong> ${escapeHtml(w.description)}</li>`)
-            .join('');
+          const warnBanner = document.createElement('div');
+          warnBanner.className = 'qr-snip-warning-banner';
 
-          warningHtml = `
-            <div class="qr-snip-warning-banner">
-              <span class="qr-snip-warning-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                  <line x1="12" y1="9" x2="12" y2="13"></line>
-                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                </svg>
-              </span>
-              <div>
-                <strong>Security Caution:</strong>
-                <ul>${listItems}</ul>
-              </div>
-            </div>
-          `;
+          const warnIconSpan = document.createElement('span');
+          warnIconSpan.className = 'qr-snip-warning-icon';
+          warnIconSpan.appendChild(createWarningTriangleSvg());
+          warnBanner.appendChild(warnIconSpan);
+
+          const warnTextDiv = document.createElement('div');
+          const warnStrong = document.createElement('strong');
+          warnStrong.textContent = 'Security Caution:';
+          warnTextDiv.appendChild(warnStrong);
+
+          const warnUl = document.createElement('ul');
+          for (const w of info.warnings) {
+            const li = document.createElement('li');
+            const liStrong = document.createElement('strong');
+            liStrong.textContent = `${w.title}: `;
+            li.appendChild(liStrong);
+            li.appendChild(document.createTextNode(w.description));
+            warnUl.appendChild(li);
+          }
+          warnTextDiv.appendChild(warnUl);
+          warnBanner.appendChild(warnTextDiv);
+          body.appendChild(warnBanner);
         }
-
-        body.innerHTML = `
-          <div class="qr-snip-url-domain">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="2" y1="12" x2="22" y2="12"></line>
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-            </svg>
-            <strong>${escapeHtml(info.domain)}</strong>
-          </div>
-          <div class="qr-snip-url-full" title="${escapeHtml(info.href)}">${escapeHtml(info.href)}</div>
-          ${warningHtml}
-        `;
 
         // Copy button
         const copyBtn = document.createElement('button');
         copyBtn.className = 'qr-snip-btn qr-snip-btn-secondary';
-        copyBtn.innerHTML = `<span>Copy</span>`;
+        const copySpan = document.createElement('span');
+        copySpan.textContent = 'Copy';
+        copyBtn.appendChild(copySpan);
         copyBtn.onclick = async () => {
           await copyText(info.href);
           copyBtn.classList.add('qr-snip-btn-copied');
-          copyBtn.innerHTML = `<span>Copied!</span>`;
+          copySpan.textContent = 'Copied!';
           setTimeout(() => {
             copyBtn.classList.remove('qr-snip-btn-copied');
-            copyBtn.innerHTML = `<span>Copy</span>`;
+            copySpan.textContent = 'Copy';
           }, 2000);
         };
 
@@ -661,14 +878,11 @@
           ? 'qr-snip-btn qr-snip-btn-warning'
           : 'qr-snip-btn qr-snip-btn-primary';
 
-        openBtn.innerHTML = `
-          <span>Open link</span>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-            <polyline points="15 3 21 3 21 9"></polyline>
-            <line x1="10" y1="14" x2="21" y2="3"></line>
-          </svg>
-        `;
+        const openSpan = document.createElement('span');
+        openSpan.textContent = 'Open link';
+        openBtn.appendChild(openSpan);
+        openBtn.appendChild(createExternalLinkSvg());
+
         openBtn.onclick = () => {
           try {
             const sendResult = api.runtime.sendMessage({ action: 'OPEN_URL', url: info.href });
@@ -693,31 +907,30 @@
 
         const copyBtn = document.createElement('button');
         copyBtn.className = 'qr-snip-btn qr-snip-btn-primary';
-        copyBtn.innerHTML = `<span>Copy</span>`;
+        const copySpan = document.createElement('span');
+        copySpan.textContent = 'Copy';
+        copyBtn.appendChild(copySpan);
         copyBtn.onclick = async () => {
           await copyText(result.text);
           copyBtn.classList.add('qr-snip-btn-copied');
-          copyBtn.innerHTML = `<span>Copied!</span>`;
+          copySpan.textContent = 'Copied!';
           setTimeout(() => {
             copyBtn.classList.remove('qr-snip-btn-copied');
-            copyBtn.innerHTML = `<span>Copy</span>`;
+            copySpan.textContent = 'Copy';
           }, 2000);
         };
         actions.appendChild(copyBtn);
       }
     } else {
       // --- Case 4: No QR found ---
-      const message = result.message || 'No QR code found, try selecting a tighter area.';
-      body.innerHTML = `
-        <div class="qr-snip-not-found">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-          <span>${escapeHtml(message)}</span>
-        </div>
-      `;
+      const notFoundDiv = document.createElement('div');
+      notFoundDiv.className = 'qr-snip-not-found';
+      notFoundDiv.appendChild(createAlertCircleSvg());
+
+      const messageSpan = document.createElement('span');
+      messageSpan.textContent = result.message || 'No QR code found, try selecting a tighter area.';
+      notFoundDiv.appendChild(messageSpan);
+      body.appendChild(notFoundDiv);
 
       const dismissBtn = document.createElement('button');
       dismissBtn.className = 'qr-snip-btn qr-snip-btn-secondary';
@@ -726,13 +939,14 @@
 
       const retryBtn = document.createElement('button');
       retryBtn.className = 'qr-snip-btn qr-snip-btn-primary';
-      retryBtn.innerHTML = `<span>Snip Tool</span>`;
+      const retrySpan = document.createElement('span');
+      retrySpan.textContent = 'Snip Tool';
+      retryBtn.appendChild(retrySpan);
       retryBtn.onclick = async () => {
         cleanUpToast();
         if (cachedScreenshotUrl) {
           initSnippingOverlay(cachedScreenshotUrl);
         } else {
-          // Request fresh screenshot
           try {
             const response = await new Promise((resolve) => {
               const res = api.runtime.sendMessage({ action: 'REQUEST_RECAPTURE' }, (r) => resolve(r));
@@ -770,27 +984,5 @@
     container.__teardown = () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }
-
-  function getThemeIcon(theme) {
-    if (theme === 'dark') {
-      // Moon icon
-      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`;
-    } else if (theme === 'light') {
-      // Sun icon
-      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`;
-    }
-    // Auto / System icon (circle half filled)
-    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor"></path></svg>`;
-  }
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
   }
 })();

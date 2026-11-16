@@ -1,6 +1,6 @@
 # QR Snip - Cross-Browser Testing Guide
 
-This guide provides step-by-step instructions to verify that QR Snip operates properly in **Google Chrome / Microsoft Edge** and **Mozilla Firefox (128+)**.
+This guide provides step-by-step instructions to verify that QR Snip operates properly in **Google Chrome / Microsoft Edge** and **Mozilla Firefox (140+)**.
 
 ---
 
@@ -18,7 +18,7 @@ This guide provides step-by-step instructions to verify that QR Snip operates pr
 
 ---
 
-### Mozilla Firefox (128+)
+### Mozilla Firefox (140+)
 1. Open Firefox and navigate to:
    ```text
    about:debugging#/runtime/this-firefox

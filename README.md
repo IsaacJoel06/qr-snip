@@ -2,7 +2,7 @@
 
 A fast, lightweight, privacy-focused WebExtension (Manifest V3) that scans any QR code visible on your screen or inside images, with built-in security screening and zero external network calls.
 
-**Supported Browsers:** Google Chrome, Microsoft Edge, and Mozilla Firefox (128+).
+**Supported Browsers:** Google Chrome, Microsoft Edge, and Mozilla Firefox 140+.
 
 ---
 
@@ -51,7 +51,7 @@ A fast, lightweight, privacy-focused WebExtension (Manifest V3) that scans any Q
 
 ---
 
-### Mozilla Firefox (128+)
+### Mozilla Firefox (140+)
 1. Open Firefox and go to:
    ```text
    about:debugging#/runtime/this-firefox
