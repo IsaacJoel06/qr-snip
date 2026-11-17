@@ -466,8 +466,221 @@
   }
 
   // -------------------------------------------------------------
-  // Cropping & Decoding
+  // Cropping & Multi-Pass Decoding
   // -------------------------------------------------------------
+
+  // Set to true to log multi-pass decoding diagnostics to the browser console
+  const DEBUG = false;
+
+  function logDebug(message) {
+    if (DEBUG) {
+      console.log(`[QR Snip] ${message}`);
+    }
+  }
+
+  /**
+   * Applies grayscale conversion, contrast stretching, and Otsu's optimal thresholding
+   * to produce a high-contrast binarized RGBA buffer for jsQR.
+   * @param {ImageData} imageData
+   * @param {number} width
+   * @param {number} height
+   * @returns {Uint8ClampedArray}
+   */
+  function applyContrastStretchAndOtsu(imageData, width, height) {
+    const data = imageData.data;
+    const numPixels = width * height;
+    const grays = new Uint8Array(numPixels);
+
+    let min = 255;
+    let max = 0;
+
+    // 1. Grayscale conversion (standard luminance formula) and find min/max
+    for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+      const g = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+      grays[p] = g;
+      if (g < min) min = g;
+      if (g > max) max = g;
+    }
+
+    // 2. Contrast stretching and histogram calculation
+    const histogram = new Uint32Array(256);
+    const range = max - min;
+
+    if (range > 0) {
+      for (let p = 0; p < numPixels; p++) {
+        const stretched = Math.round(((grays[p] - min) / range) * 255);
+        grays[p] = stretched;
+        histogram[stretched]++;
+      }
+    } else {
+      for (let p = 0; p < numPixels; p++) {
+        histogram[grays[p]]++;
+      }
+    }
+
+    // 3. Simple Otsu's threshold calculation
+    let sum = 0;
+    for (let i = 0; i < 256; i++) {
+      sum += i * histogram[i];
+    }
+
+    let sumB = 0;
+    let wB = 0;
+    let varMax = 0;
+    let threshold = 128;
+
+    for (let t = 0; t < 256; t++) {
+      wB += histogram[t];
+      if (wB === 0) continue;
+      const wF = numPixels - wB;
+      if (wF === 0) break;
+
+      sumB += t * histogram[t];
+      const mB = sumB / wB;
+      const mF = (sum - sumB) / wF;
+
+      const varBetween = wB * wF * (mB - mF) * (mB - mF);
+      if (varBetween > varMax) {
+        varMax = varBetween;
+        threshold = t;
+      }
+    }
+
+    // 4. Binarize to black (0) and white (255) with full opacity (255)
+    const binarized = new Uint8ClampedArray(data.length);
+    for (let p = 0, i = 0; p < numPixels; p++, i += 4) {
+      const val = grays[p] < threshold ? 0 : 255;
+      binarized[i] = val;
+      binarized[i + 1] = val;
+      binarized[i + 2] = val;
+      binarized[i + 3] = 255;
+    }
+
+    return binarized;
+  }
+
+  /**
+   * Multi-pass decoding pipeline for stylized, tight-cropped, or low-quality QR codes.
+   * Executes the following passes in order and stops at the first success:
+   * (1) Original crop with a white quiet-zone border (~10% on each side)
+   * (2) 2x and 3x upscale with imageSmoothingEnabled = false
+   * (3) Grayscale with contrast stretch and a simple Otsu threshold
+   * (4) Downscale to 800px max side if the crop is large
+   * Keeps inversionAttempts: 'attemptBoth'.
+   * @param {HTMLCanvasElement} sourceCanvas
+   * @returns {object|null}
+   */
+  function decodeQrWithMultiPass(sourceCanvas) {
+    if (typeof jsQR !== 'function' || !sourceCanvas || sourceCanvas.width <= 0 || sourceCanvas.height <= 0) {
+      return null;
+    }
+
+    // -------------------------------------------------------------
+    // Pass 1: Original crop with ~10% white quiet-zone border
+    // -------------------------------------------------------------
+    const padX = Math.max(4, Math.round(sourceCanvas.width * 0.10));
+    const padY = Math.max(4, Math.round(sourceCanvas.height * 0.10));
+    const paddedW = sourceCanvas.width + padX * 2;
+    const paddedH = sourceCanvas.height + padY * 2;
+
+    const paddedCanvas = document.createElement('canvas');
+    paddedCanvas.width = paddedW;
+    paddedCanvas.height = paddedH;
+    const paddedCtx = paddedCanvas.getContext('2d', { willReadFrequently: true });
+
+    // Fill white quiet-zone background and draw original crop in center
+    paddedCtx.fillStyle = '#ffffff';
+    paddedCtx.fillRect(0, 0, paddedW, paddedH);
+    paddedCtx.drawImage(sourceCanvas, padX, padY);
+
+    const data1 = paddedCtx.getImageData(0, 0, paddedW, paddedH);
+    let decoded = jsQR(data1.data, paddedW, paddedH, { inversionAttempts: 'attemptBoth' });
+    if (decoded && decoded.data && decoded.data.trim()) {
+      logDebug('Pass 1 (original crop with white quiet-zone border) succeeded');
+      return decoded;
+    }
+
+    // -------------------------------------------------------------
+    // Pass 2: 2x and 3x upscale with imageSmoothingEnabled = false
+    // -------------------------------------------------------------
+    // Pass 2a: 2x upscale
+    const canvas2x = document.createElement('canvas');
+    canvas2x.width = paddedW * 2;
+    canvas2x.height = paddedH * 2;
+    const ctx2x = canvas2x.getContext('2d', { willReadFrequently: true });
+    ctx2x.imageSmoothingEnabled = false;
+    ctx2x.drawImage(paddedCanvas, 0, 0, canvas2x.width, canvas2x.height);
+
+    const data2x = ctx2x.getImageData(0, 0, canvas2x.width, canvas2x.height);
+    decoded = jsQR(data2x.data, canvas2x.width, canvas2x.height, { inversionAttempts: 'attemptBoth' });
+    if (decoded && decoded.data && decoded.data.trim()) {
+      logDebug('Pass 2a (2x upscale nearest-neighbor) succeeded');
+      return decoded;
+    }
+
+    // Pass 2b: 3x upscale
+    const canvas3x = document.createElement('canvas');
+    canvas3x.width = paddedW * 3;
+    canvas3x.height = paddedH * 3;
+    const ctx3x = canvas3x.getContext('2d', { willReadFrequently: true });
+    ctx3x.imageSmoothingEnabled = false;
+    ctx3x.drawImage(paddedCanvas, 0, 0, canvas3x.width, canvas3x.height);
+
+    const data3x = ctx3x.getImageData(0, 0, canvas3x.width, canvas3x.height);
+    decoded = jsQR(data3x.data, canvas3x.width, canvas3x.height, { inversionAttempts: 'attemptBoth' });
+    if (decoded && decoded.data && decoded.data.trim()) {
+      logDebug('Pass 2b (3x upscale nearest-neighbor) succeeded');
+      return decoded;
+    }
+
+    // -------------------------------------------------------------
+    // Pass 3: Grayscale with contrast stretch and Otsu threshold
+    // -------------------------------------------------------------
+    const otsuData = applyContrastStretchAndOtsu(data1, paddedW, paddedH);
+    decoded = jsQR(otsuData, paddedW, paddedH, { inversionAttempts: 'attemptBoth' });
+    if (decoded && decoded.data && decoded.data.trim()) {
+      logDebug('Pass 3 (grayscale with contrast stretch and Otsu threshold) succeeded');
+      return decoded;
+    }
+
+    // Also attempt Otsu threshold on the 2x upscaled image for low-contrast small codes
+    if (canvas2x.width <= 1200) {
+      const otsuData2x = applyContrastStretchAndOtsu(data2x, canvas2x.width, canvas2x.height);
+      decoded = jsQR(otsuData2x, canvas2x.width, canvas2x.height, { inversionAttempts: 'attemptBoth' });
+      if (decoded && decoded.data && decoded.data.trim()) {
+        logDebug('Pass 3b (upscaled Otsu threshold) succeeded');
+        return decoded;
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Pass 4: Downscale to 800px max side if the crop is large
+    // -------------------------------------------------------------
+    const maxSide = Math.max(paddedW, paddedH);
+    if (maxSide > 800) {
+      const scale = 800 / maxSide;
+      const downW = Math.round(paddedW * scale);
+      const downH = Math.round(paddedH * scale);
+
+      const downCanvas = document.createElement('canvas');
+      downCanvas.width = downW;
+      downCanvas.height = downH;
+      const downCtx = downCanvas.getContext('2d', { willReadFrequently: true });
+      downCtx.imageSmoothingEnabled = true;
+      downCtx.imageSmoothingQuality = 'high';
+      downCtx.drawImage(paddedCanvas, 0, 0, downW, downH);
+
+      const downData = downCtx.getImageData(0, 0, downW, downH);
+      decoded = jsQR(downData.data, downW, downH, { inversionAttempts: 'attemptBoth' });
+      if (decoded && decoded.data && decoded.data.trim()) {
+        logDebug('Pass 4 (downscale to 800px max side) succeeded');
+        return decoded;
+      }
+    }
+
+    logDebug('All decoding passes exhausted without match');
+    return null;
+  }
 
   /**
    * Crops the user-selected area from the captured tab image,
@@ -499,10 +712,7 @@
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-      const imageData = ctx.getImageData(0, 0, cropW, cropH);
-      const decoded = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'attemptBoth'
-      });
+      const decoded = decodeQrWithMultiPass(canvas);
 
       if (decoded && decoded.data && decoded.data.trim().length > 0) {
         showResultToast({ success: true, text: decoded.data.trim() });
@@ -541,10 +751,7 @@
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         ctx.drawImage(img, 0, 0);
 
-        const imgData = ctx.getImageData(0, 0, width, height);
-        decoded = jsQR(imgData.data, imgData.width, imgData.height, {
-          inversionAttempts: 'attemptBoth'
-        });
+        decoded = decodeQrWithMultiPass(canvas);
       }
     } catch {
       // Direct access may be blocked by CORS (tainted canvas)
@@ -575,10 +782,7 @@
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             ctx.drawImage(tabImg, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-            const imgData = ctx.getImageData(0, 0, cropW, cropH);
-            decoded = jsQR(imgData.data, imgData.width, imgData.height, {
-              inversionAttempts: 'attemptBoth'
-            });
+            decoded = decodeQrWithMultiPass(canvas);
           }
         }
       } catch (fallbackErr) {
