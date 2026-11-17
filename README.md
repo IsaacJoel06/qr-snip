@@ -9,6 +9,7 @@ A fast, lightweight, privacy-focused WebExtension (Manifest V3) that scans any Q
 ## Key Features
 
 - **Viewport Snipping:** Capture and scan any QR code on screen using the toolbar icon or shortcut <kbd>Alt+Shift+Q</kbd>.
+- **Touch, Pen & Stylus Ready:** Full pointer-event support with pointer capture, scroll-lock (`touch-action: none`), on-screen Cancel button, and accessible &ge;44px tap targets.
 - **Right-Click Image Scan:** Right-click any image on the web and select **"Scan QR in this image"** for instant decoding without dragging.
 - **Cross-Browser Engine:** Native WebExtension compatibility across Chromium (Chrome, Edge, Brave) and Firefox.
 - **High-DPI & Zoom Resilient:** Automatically scales pixel coordinates to match `devicePixelRatio` and browser zoom settings.
@@ -68,9 +69,10 @@ A fast, lightweight, privacy-focused WebExtension (Manifest V3) that scans any Q
 
 | Action | Shortcut / Trigger | Description |
 | :--- | :--- | :--- |
-| **Start Snip** | <kbd>Alt+Shift+Q</kbd> or click extension icon | Dims the page; drag a rectangle over any QR code. |
+| **Start Snip** | <kbd>Alt+Shift+Q</kbd> or click extension icon | Dims the page; drag a rectangle over any QR code with mouse, touch, or pen. |
 | **Scan Image** | Right-click image &rarr; **Scan QR in this image** | Scans an image element directly without selecting an area. |
-| **Cancel / Close** | <kbd>Esc</kbd> or click ✕ | Cancels current selection or dismisses the popup toast. |
+| **Cancel Snip** | <kbd>Esc</kbd> or tap on-screen **Cancel** button | Cancels current selection (ideal for touchscreen devices without an Esc key). |
+| **Close Popup** | <kbd>Esc</kbd> or click ✕ | Dismisses the result toast notification. |
 | **Toggle Theme** | Click theme button in toast header | Switches between System Auto, Dark, and Light themes. |
 
 ---

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "QR Snip",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Snip and scan any QR code visible on webpages or images to safely open links or copy text.",
   "permissions": [
     "activeTab",

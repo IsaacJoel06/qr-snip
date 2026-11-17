@@ -55,3 +55,18 @@ Perform the following validation tests:
 | **9** | **Restricted Page Notice** | Open an internal page (e.g. `chrome://extensions` or `about:debugging`) and click the icon or press <kbd>Alt+Shift+Q</kbd>. | A friendly notification explains that browser security prevents running extensions on internal pages, and an action badge (`!`) appears temporarily. |
 | **10** | **Dark / Light Mode Toggle** | In the toast header, click the theme icon (🌓 / 🌙 / ☀️). | Toast switches between Dark, Light, and System Auto themes instantly. Preference persists across sessions. |
 | **11** | **Escape Cancellation** | Start a snip or open a toast, then press <kbd>Esc</kbd>. | Selection overlay cancels immediately or result toast closes. |
+
+---
+
+## 3. Touch, Pen & Mobile Test Checklist
+
+You can test these either on a touchscreen/tablet device, a stylus/pen display, or using DevTools Device Emulation (Device Toolbar with touch simulation enabled):
+
+| # | Test Case | Action | Expected Result |
+|---|---|---|---|
+| **T1** | **Touch Drag-to-Snip** | Touch and drag a rectangle over a QR code with a finger or stylus. | Page does not scroll or zoom (`touch-action: none`). Viewfinder follows touch smoothly. |
+| **T2** | **Pointer Capture** | Start dragging and move finger beyond the viewport edge. | Drag tracking continues uninterrupted until finger lifts (`releasePointerCapture`). |
+| **T3** | **On-Screen Cancel Button** | Tap the visible **Cancel** button in the top banner. | Overlay closes immediately without starting an accidental drag. |
+| **T4** | **Accidental Tap Dismissal** | Tap anywhere on the dim overlay without dragging (selection < 20x20 px). | Overlay cancels cleanly without triggering a failed QR scan. |
+| **T5** | **44px Tap Targets** | Inspect/tap the action buttons in the result toast (Open link, Copy, Snip Tool, theme toggle, close). | All buttons have a tap target of at least 44px height for comfortable touch accessibility. |
+| **T6** | **Narrow Screen Layout** | Open DevTools, switch to a narrow mobile viewport (e.g. 360px wide), and scan a link. | Toast card fits within `calc(100vw - 24px)`. Long URLs wrap cleanly with `overflow-wrap: anywhere` without horizontal overflow. |

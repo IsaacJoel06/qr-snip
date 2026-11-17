@@ -279,31 +279,47 @@
 
   /**
    * Creates and attaches the dim overlay and selection handles.
+   * Supports mouse, touch, and pen interactions with pointer events and pointer capture.
    * @param {string} screenshotUrl - Base64 PNG data URL of the visible tab
    */
   function initSnippingOverlay(screenshotUrl) {
     const overlay = document.createElement('div');
     overlay.className = 'qr-snip-overlay';
 
-    // Guide badge built safely
+    // Guide badge built safely with Cancel button for touch users
     const guideBadge = document.createElement('div');
     guideBadge.className = 'qr-snip-guide-badge';
 
     const badgeIcon = createQrTargetSvg(14, 14, 'currentColor');
     guideBadge.appendChild(badgeIcon);
 
-    const badgeText1 = document.createElement('span');
-    badgeText1.textContent = 'Drag a box over the QR code';
-    guideBadge.appendChild(badgeText1);
+    const badgeText = document.createElement('span');
+    badgeText.textContent = 'Drag over the QR code';
+    guideBadge.appendChild(badgeText);
 
     const kbd = document.createElement('kbd');
+    kbd.className = 'qr-snip-guide-kbd';
     kbd.textContent = 'Esc';
     guideBadge.appendChild(kbd);
 
-    const badgeText2 = document.createElement('span');
-    badgeText2.textContent = 'to cancel';
-    guideBadge.appendChild(badgeText2);
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'qr-snip-guide-cancel-btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.setAttribute('type', 'button');
+    cancelBtn.setAttribute('aria-label', 'Cancel QR Snip');
 
+    // Prevent pointerdown on badge / cancel button from initiating drag
+    guideBadge.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+    }, { capture: true });
+
+    cancelBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      cleanUpOverlay();
+    });
+
+    guideBadge.appendChild(cancelBtn);
     overlay.appendChild(guideBadge);
 
     // Draggable selection box with viewfinder corners built safely
@@ -322,27 +338,38 @@
     activeOverlay = overlay;
 
     let isDragging = false;
+    let activePointerId = null;
     let startX = 0;
     let startY = 0;
     let currentRect = { left: 0, top: 0, width: 0, height: 0 };
 
-    function onMouseDown(e) {
-      if (e.button !== 0) return;
+    function onPointerDown(e) {
+      // For mouse, only primary left click (button === 0). For touch/pen, button is 0 or -1.
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (activePointerId !== null) return; // Ignore multi-touch secondary fingers
+
       e.preventDefault();
       e.stopPropagation();
 
+      activePointerId = e.pointerId;
       isDragging = true;
       startX = e.clientX;
       startY = e.clientY;
       currentRect = { left: startX, top: startY, width: 0, height: 0 };
+
+      try {
+        overlay.setPointerCapture(e.pointerId);
+      } catch {
+        // Fallback if pointer capture is unsupported
+      }
 
       overlay.classList.add('qr-snip-dragging');
       selectionBox.style.display = 'block';
       updateSelectionStyle(selectionBox, currentRect);
     }
 
-    function onMouseMove(e) {
-      if (!isDragging) return;
+    function onPointerMove(e) {
+      if (!isDragging || (activePointerId !== null && e.pointerId !== activePointerId)) return;
       e.preventDefault();
       e.stopPropagation();
 
@@ -357,19 +384,45 @@
       updateSelectionStyle(selectionBox, currentRect);
     }
 
-    function onMouseUp(e) {
-      if (!isDragging) return;
+    function onPointerUp(e) {
+      if (!isDragging || (activePointerId !== null && e.pointerId !== activePointerId)) return;
       e.preventDefault();
       e.stopPropagation();
 
+      try {
+        if (overlay.hasPointerCapture && overlay.hasPointerCapture(e.pointerId)) {
+          overlay.releasePointerCapture(e.pointerId);
+        }
+      } catch {
+        // Fallback
+      }
+
       isDragging = false;
+      activePointerId = null;
       cleanUpOverlay();
 
-      if (currentRect.width < 10 || currentRect.height < 10) {
+      // Ignore selections smaller than about 20x20 px so an accidental tap doesn't trigger a scan.
+      // Treat a single tap as cancel.
+      if (currentRect.width < 20 || currentRect.height < 20) {
         return;
       }
 
       processSelection(screenshotUrl, currentRect);
+    }
+
+    function onPointerCancel(e) {
+      if (activePointerId !== null && e.pointerId === activePointerId) {
+        try {
+          if (overlay.hasPointerCapture && overlay.hasPointerCapture(e.pointerId)) {
+            overlay.releasePointerCapture(e.pointerId);
+          }
+        } catch {
+          // Fallback
+        }
+        isDragging = false;
+        activePointerId = null;
+        cleanUpOverlay();
+      }
     }
 
     function onKeyDown(e) {
@@ -380,15 +433,17 @@
       }
     }
 
-    overlay.addEventListener('mousedown', onMouseDown, { capture: true });
-    window.addEventListener('mousemove', onMouseMove, { capture: true });
-    window.addEventListener('mouseup', onMouseUp, { capture: true });
+    overlay.addEventListener('pointerdown', onPointerDown, { capture: true, passive: false });
+    window.addEventListener('pointermove', onPointerMove, { capture: true, passive: false });
+    window.addEventListener('pointerup', onPointerUp, { capture: true, passive: false });
+    window.addEventListener('pointercancel', onPointerCancel, { capture: true, passive: false });
     window.addEventListener('keydown', onKeyDown, { capture: true });
 
     overlay.__teardown = () => {
-      overlay.removeEventListener('mousedown', onMouseDown, { capture: true });
-      window.removeEventListener('mousemove', onMouseMove, { capture: true });
-      window.removeEventListener('mouseup', onMouseUp, { capture: true });
+      overlay.removeEventListener('pointerdown', onPointerDown, { capture: true, passive: false });
+      window.removeEventListener('pointermove', onPointerMove, { capture: true, passive: false });
+      window.removeEventListener('pointerup', onPointerUp, { capture: true, passive: false });
+      window.removeEventListener('pointercancel', onPointerCancel, { capture: true, passive: false });
       window.removeEventListener('keydown', onKeyDown, { capture: true });
     };
   }
