@@ -479,15 +479,169 @@
   }
 
   /**
+   * Pads an RGBA image buffer with a solid white quiet zone (~10% on each side)
+   * entirely in typed array memory, avoiding any secondary canvas creation or redrawing.
+   * @param {Uint8ClampedArray} srcData
+   * @param {number} srcW
+   * @param {number} srcH
+   * @param {number} padRatio
+   * @returns {{ data: Uint8ClampedArray, width: number, height: number }}
+   */
+  function padImageData(srcData, srcW, srcH, padRatio = 0.10) {
+    const padX = Math.max(4, Math.round(srcW * padRatio));
+    const padY = Math.max(4, Math.round(srcH * padRatio));
+    const paddedW = srcW + padX * 2;
+    const paddedH = srcH + padY * 2;
+    const paddedData = new Uint8ClampedArray(paddedW * paddedH * 4);
+
+    // Initialize with opaque white (255, 255, 255, 255)
+    paddedData.fill(255);
+
+    const rowByteLength = srcW * 4;
+    for (let y = 0; y < srcH; y++) {
+      const srcOffset = y * rowByteLength;
+      const dstOffset = ((padY + y) * paddedW + padX) * 4;
+      paddedData.set(srcData.subarray(srcOffset, srcOffset + rowByteLength), dstOffset);
+    }
+
+    return { data: paddedData, width: paddedW, height: paddedH };
+  }
+
+  /**
+   * Performs an integer nearest-neighbor upscale directly on an RGBA pixel buffer
+   * without creating or drawing to an intermediary canvas.
+   * @param {Uint8ClampedArray} srcData
+   * @param {number} srcW
+   * @param {number} srcH
+   * @param {number} scale
+   * @returns {{ data: Uint8ClampedArray, width: number, height: number }}
+   */
+  function upscaleNearestNeighbor(srcData, srcW, srcH, scale) {
+    const s = Math.max(1, Math.round(scale));
+    if (s === 1) {
+      return { data: srcData, width: srcW, height: srcH };
+    }
+
+    const dstW = srcW * s;
+    const dstH = srcH * s;
+    const dstData = new Uint8ClampedArray(dstW * dstH * 4);
+
+    if (srcData.byteOffset % 4 === 0) {
+      const src32 = new Uint32Array(srcData.buffer, srcData.byteOffset, srcW * srcH);
+      const dst32 = new Uint32Array(dstData.buffer, dstData.byteOffset, dstW * dstH);
+
+      for (let y = 0; y < srcH; y++) {
+        const srcRowStart = y * srcW;
+        const dstRowStart = (y * s) * dstW;
+
+        for (let x = 0; x < srcW; x++) {
+          const pixel = src32[srcRowStart + x];
+          const outBase = dstRowStart + x * s;
+          for (let sx = 0; sx < s; sx++) {
+            dst32[outBase + sx] = pixel;
+          }
+        }
+
+        const firstRow = dst32.subarray(dstRowStart, dstRowStart + dstW);
+        for (let sy = 1; sy < s; sy++) {
+          dst32.set(firstRow, dstRowStart + sy * dstW);
+        }
+      }
+    } else {
+      const rowByteLen = dstW * 4;
+      for (let y = 0; y < srcH; y++) {
+        const dstRowBase = (y * s) * rowByteLen;
+
+        for (let x = 0; x < srcW; x++) {
+          const srcIdx = (y * srcW + x) * 4;
+          const r = srcData[srcIdx];
+          const g = srcData[srcIdx + 1];
+          const b = srcData[srcIdx + 2];
+          const a = srcData[srcIdx + 3];
+
+          for (let sx = 0; sx < s; sx++) {
+            const dstIdx = dstRowBase + (x * s + sx) * 4;
+            dstData[dstIdx] = r;
+            dstData[dstIdx + 1] = g;
+            dstData[dstIdx + 2] = b;
+            dstData[dstIdx + 3] = a;
+          }
+        }
+
+        const firstRow = dstData.subarray(dstRowBase, dstRowBase + rowByteLen);
+        for (let sy = 1; sy < s; sy++) {
+          dstData.set(firstRow, dstRowBase + sy * rowByteLen);
+        }
+      }
+    }
+
+    return { data: dstData, width: dstW, height: dstH };
+  }
+
+  /**
+   * Downscales an RGBA pixel buffer to a maximum dimension using bilinear interpolation
+   * directly in memory, without creating or redrawing canvases.
+   * @param {Uint8ClampedArray} srcData
+   * @param {number} srcW
+   * @param {number} srcH
+   * @param {number} maxSide
+   * @returns {{ data: Uint8ClampedArray, width: number, height: number }}
+   */
+  function downscaleImageData(srcData, srcW, srcH, maxSide = 800) {
+    const currentMax = Math.max(srcW, srcH);
+    if (currentMax <= maxSide) {
+      return { data: srcData, width: srcW, height: srcH };
+    }
+
+    const scale = maxSide / currentMax;
+    const dstW = Math.max(1, Math.round(srcW * scale));
+    const dstH = Math.max(1, Math.round(srcH * scale));
+    const dstData = new Uint8ClampedArray(dstW * dstH * 4);
+
+    const xRatio = srcW / dstW;
+    const yRatio = srcH / dstH;
+
+    for (let dy = 0; dy < dstH; dy++) {
+      const srcY = dy * yRatio;
+      const y0 = Math.floor(srcY);
+      const y1 = Math.min(y0 + 1, srcH - 1);
+      const yLerp = srcY - y0;
+      const dstRowOffset = dy * dstW * 4;
+
+      for (let dx = 0; dx < dstW; dx++) {
+        const srcX = dx * xRatio;
+        const x0 = Math.floor(srcX);
+        const x1 = Math.min(x0 + 1, srcW - 1);
+        const xLerp = srcX - x0;
+
+        const idx00 = (y0 * srcW + x0) * 4;
+        const idx10 = (y0 * srcW + x1) * 4;
+        const idx01 = (y1 * srcW + x0) * 4;
+        const idx11 = (y1 * srcW + x1) * 4;
+
+        const dstIdx = dstRowOffset + dx * 4;
+
+        for (let c = 0; c < 4; c++) {
+          const top = srcData[idx00 + c] * (1 - xLerp) + srcData[idx10 + c] * xLerp;
+          const bot = srcData[idx01 + c] * (1 - xLerp) + srcData[idx11 + c] * xLerp;
+          dstData[dstIdx + c] = Math.round(top * (1 - yLerp) + bot * yLerp);
+        }
+      }
+    }
+
+    return { data: dstData, width: dstW, height: dstH };
+  }
+
+  /**
    * Applies grayscale conversion, contrast stretching, and Otsu's optimal thresholding
    * to produce a high-contrast binarized RGBA buffer for jsQR.
-   * @param {ImageData} imageData
+   * @param {ImageData|Uint8ClampedArray} imageData
    * @param {number} width
    * @param {number} height
    * @returns {Uint8ClampedArray}
    */
   function applyContrastStretchAndOtsu(imageData, width, height) {
-    const data = imageData.data;
+    const data = imageData.data || imageData;
     const numPixels = width * height;
     const grays = new Uint8Array(numPixels);
 
@@ -561,121 +715,130 @@
 
   /**
    * Multi-pass decoding pipeline for stylized, tight-cropped, or low-quality QR codes.
-   * Executes the following passes in order and stops at the first success:
+   * Operates purely on pixel buffers / ImageData to prevent origin tainting in Firefox:
    * (1) Original crop with a white quiet-zone border (~10% on each side)
-   * (2) 2x and 3x upscale with imageSmoothingEnabled = false
+   * (2) 2x and 3x upscale with nearest-neighbor resampling
    * (3) Grayscale with contrast stretch and a simple Otsu threshold
    * (4) Downscale to 800px max side if the crop is large
    * Keeps inversionAttempts: 'attemptBoth'.
-   * @param {HTMLCanvasElement} sourceCanvas
+   * @param {ImageData|HTMLCanvasElement|{data: Uint8ClampedArray, width: number, height: number}} source
    * @returns {object|null}
    */
-  function decodeQrWithMultiPass(sourceCanvas) {
-    if (typeof jsQR !== 'function' || !sourceCanvas || sourceCanvas.width <= 0 || sourceCanvas.height <= 0) {
+  function decodeQrWithMultiPass(source) {
+    if (typeof jsQR !== 'function' || !source) {
+      return null;
+    }
+
+    let rawData = null;
+    let width = 0;
+    let height = 0;
+
+    if (source instanceof ImageData || (source.data && source.width && source.height)) {
+      rawData = source.data;
+      width = source.width;
+      height = source.height;
+    } else if (typeof source.getContext === 'function' || source instanceof HTMLCanvasElement) {
+      try {
+        width = source.width;
+        height = source.height;
+        if (width <= 0 || height <= 0) return null;
+        const ctx = source.getContext('2d', { willReadFrequently: true });
+        const imgData = ctx.getImageData(0, 0, width, height);
+        rawData = imgData.data;
+      } catch (err) {
+        logDebug(`Failed to extract ImageData from canvas: ${err}`);
+        return null;
+      }
+    }
+
+    if (!rawData || width <= 0 || height <= 0) {
       return null;
     }
 
     // -------------------------------------------------------------
     // Pass 1: Original crop with ~10% white quiet-zone border
     // -------------------------------------------------------------
-    const padX = Math.max(4, Math.round(sourceCanvas.width * 0.10));
-    const padY = Math.max(4, Math.round(sourceCanvas.height * 0.10));
-    const paddedW = sourceCanvas.width + padX * 2;
-    const paddedH = sourceCanvas.height + padY * 2;
-
-    const paddedCanvas = document.createElement('canvas');
-    paddedCanvas.width = paddedW;
-    paddedCanvas.height = paddedH;
-    const paddedCtx = paddedCanvas.getContext('2d', { willReadFrequently: true });
-
-    // Fill white quiet-zone background and draw original crop in center
-    paddedCtx.fillStyle = '#ffffff';
-    paddedCtx.fillRect(0, 0, paddedW, paddedH);
-    paddedCtx.drawImage(sourceCanvas, padX, padY);
-
-    const data1 = paddedCtx.getImageData(0, 0, paddedW, paddedH);
-    let decoded = jsQR(data1.data, paddedW, paddedH, { inversionAttempts: 'attemptBoth' });
-    if (decoded && decoded.data && decoded.data.trim()) {
-      logDebug('Pass 1 (original crop with white quiet-zone border) succeeded');
-      return decoded;
+    let padded = null;
+    try {
+      padded = padImageData(rawData, width, height, 0.10);
+      const decoded = jsQR(padded.data, padded.width, padded.height, { inversionAttempts: 'attemptBoth' });
+      if (decoded && decoded.data && decoded.data.trim()) {
+        logDebug('Pass 1 (original crop with white quiet-zone border) succeeded');
+        return decoded;
+      }
+    } catch (err) {
+      logDebug(`Pass 1 failed: ${err}`);
     }
 
-    // -------------------------------------------------------------
-    // Pass 2: 2x and 3x upscale with imageSmoothingEnabled = false
-    // -------------------------------------------------------------
-    // Pass 2a: 2x upscale
-    const canvas2x = document.createElement('canvas');
-    canvas2x.width = paddedW * 2;
-    canvas2x.height = paddedH * 2;
-    const ctx2x = canvas2x.getContext('2d', { willReadFrequently: true });
-    ctx2x.imageSmoothingEnabled = false;
-    ctx2x.drawImage(paddedCanvas, 0, 0, canvas2x.width, canvas2x.height);
+    const baseData = padded ? padded.data : rawData;
+    const baseW = padded ? padded.width : width;
+    const baseH = padded ? padded.height : height;
 
-    const data2x = ctx2x.getImageData(0, 0, canvas2x.width, canvas2x.height);
-    decoded = jsQR(data2x.data, canvas2x.width, canvas2x.height, { inversionAttempts: 'attemptBoth' });
-    if (decoded && decoded.data && decoded.data.trim()) {
-      logDebug('Pass 2a (2x upscale nearest-neighbor) succeeded');
-      return decoded;
+    // -------------------------------------------------------------
+    // Pass 2: 2x and 3x upscale with nearest-neighbor resampling
+    // -------------------------------------------------------------
+    let up2x = null;
+    try {
+      up2x = upscaleNearestNeighbor(baseData, baseW, baseH, 2);
+      const decoded = jsQR(up2x.data, up2x.width, up2x.height, { inversionAttempts: 'attemptBoth' });
+      if (decoded && decoded.data && decoded.data.trim()) {
+        logDebug('Pass 2a (2x upscale nearest-neighbor) succeeded');
+        return decoded;
+      }
+    } catch (err) {
+      logDebug(`Pass 2a failed: ${err}`);
     }
 
-    // Pass 2b: 3x upscale
-    const canvas3x = document.createElement('canvas');
-    canvas3x.width = paddedW * 3;
-    canvas3x.height = paddedH * 3;
-    const ctx3x = canvas3x.getContext('2d', { willReadFrequently: true });
-    ctx3x.imageSmoothingEnabled = false;
-    ctx3x.drawImage(paddedCanvas, 0, 0, canvas3x.width, canvas3x.height);
-
-    const data3x = ctx3x.getImageData(0, 0, canvas3x.width, canvas3x.height);
-    decoded = jsQR(data3x.data, canvas3x.width, canvas3x.height, { inversionAttempts: 'attemptBoth' });
-    if (decoded && decoded.data && decoded.data.trim()) {
-      logDebug('Pass 2b (3x upscale nearest-neighbor) succeeded');
-      return decoded;
+    try {
+      const up3x = upscaleNearestNeighbor(baseData, baseW, baseH, 3);
+      const decoded = jsQR(up3x.data, up3x.width, up3x.height, { inversionAttempts: 'attemptBoth' });
+      if (decoded && decoded.data && decoded.data.trim()) {
+        logDebug('Pass 2b (3x upscale nearest-neighbor) succeeded');
+        return decoded;
+      }
+    } catch (err) {
+      logDebug(`Pass 2b failed: ${err}`);
     }
 
     // -------------------------------------------------------------
     // Pass 3: Grayscale with contrast stretch and Otsu threshold
     // -------------------------------------------------------------
-    const otsuData = applyContrastStretchAndOtsu(data1, paddedW, paddedH);
-    decoded = jsQR(otsuData, paddedW, paddedH, { inversionAttempts: 'attemptBoth' });
-    if (decoded && decoded.data && decoded.data.trim()) {
-      logDebug('Pass 3 (grayscale with contrast stretch and Otsu threshold) succeeded');
-      return decoded;
-    }
-
-    // Also attempt Otsu threshold on the 2x upscaled image for low-contrast small codes
-    if (canvas2x.width <= 1200) {
-      const otsuData2x = applyContrastStretchAndOtsu(data2x, canvas2x.width, canvas2x.height);
-      decoded = jsQR(otsuData2x, canvas2x.width, canvas2x.height, { inversionAttempts: 'attemptBoth' });
+    try {
+      const otsuData = applyContrastStretchAndOtsu(baseData, baseW, baseH);
+      let decoded = jsQR(otsuData, baseW, baseH, { inversionAttempts: 'attemptBoth' });
       if (decoded && decoded.data && decoded.data.trim()) {
-        logDebug('Pass 3b (upscaled Otsu threshold) succeeded');
+        logDebug('Pass 3 (grayscale with contrast stretch and Otsu threshold) succeeded');
         return decoded;
       }
+
+      // Also attempt Otsu threshold on the 2x upscaled image for low-contrast small codes
+      if (up2x && up2x.width <= 1200) {
+        const otsuData2x = applyContrastStretchAndOtsu(up2x.data, up2x.width, up2x.height);
+        decoded = jsQR(otsuData2x, up2x.width, up2x.height, { inversionAttempts: 'attemptBoth' });
+        if (decoded && decoded.data && decoded.data.trim()) {
+          logDebug('Pass 3b (upscaled Otsu threshold) succeeded');
+          return decoded;
+        }
+      }
+    } catch (err) {
+      logDebug(`Pass 3 failed: ${err}`);
     }
 
     // -------------------------------------------------------------
     // Pass 4: Downscale to 800px max side if the crop is large
     // -------------------------------------------------------------
-    const maxSide = Math.max(paddedW, paddedH);
-    if (maxSide > 800) {
-      const scale = 800 / maxSide;
-      const downW = Math.round(paddedW * scale);
-      const downH = Math.round(paddedH * scale);
-
-      const downCanvas = document.createElement('canvas');
-      downCanvas.width = downW;
-      downCanvas.height = downH;
-      const downCtx = downCanvas.getContext('2d', { willReadFrequently: true });
-      downCtx.imageSmoothingEnabled = true;
-      downCtx.imageSmoothingQuality = 'high';
-      downCtx.drawImage(paddedCanvas, 0, 0, downW, downH);
-
-      const downData = downCtx.getImageData(0, 0, downW, downH);
-      decoded = jsQR(downData.data, downW, downH, { inversionAttempts: 'attemptBoth' });
-      if (decoded && decoded.data && decoded.data.trim()) {
-        logDebug('Pass 4 (downscale to 800px max side) succeeded');
-        return decoded;
+    try {
+      const maxSide = Math.max(baseW, baseH);
+      if (maxSide > 800) {
+        const down = downscaleImageData(baseData, baseW, baseH, 800);
+        const decoded = jsQR(down.data, down.width, down.height, { inversionAttempts: 'attemptBoth' });
+        if (decoded && decoded.data && decoded.data.trim()) {
+          logDebug('Pass 4 (downscale to 800px max side) succeeded');
+          return decoded;
+        }
       }
+    } catch (err) {
+      logDebug(`Pass 4 failed: ${err}`);
     }
 
     logDebug('All decoding passes exhausted without match');
@@ -712,7 +875,16 @@
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-      const decoded = decodeQrWithMultiPass(canvas);
+      let rawImageData = null;
+      try {
+        rawImageData = ctx.getImageData(0, 0, cropW, cropH);
+      } catch (secErr) {
+        logDebug(`SecurityError reading canvas imageData: ${secErr}`);
+        showResultToast({ success: false });
+        return;
+      }
+
+      const decoded = decodeQrWithMultiPass(rawImageData);
 
       if (decoded && decoded.data && decoded.data.trim().length > 0) {
         showResultToast({ success: true, text: decoded.data.trim() });
@@ -720,7 +892,7 @@
         showResultToast({ success: false });
       }
     } catch (err) {
-      console.error('[QR Snip] Error processing selection:', err);
+      logDebug(`Error processing selection: ${err}`);
       showResultToast({ success: false });
     }
   }
@@ -737,7 +909,6 @@
     // Method 1: Try direct image decoding onto offscreen canvas
     try {
       const img = new Image();
-      img.crossOrigin = 'anonymous';
       img.src = srcUrl;
       await img.decode();
 
@@ -751,10 +922,16 @@
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         ctx.drawImage(img, 0, 0);
 
-        decoded = decodeQrWithMultiPass(canvas);
+        try {
+          const imgData = ctx.getImageData(0, 0, width, height);
+          decoded = decodeQrWithMultiPass(imgData);
+        } catch (corsErr) {
+          logDebug(`Method 1 direct canvas getImageData blocked (CORS): ${corsErr}`);
+          decoded = null;
+        }
       }
-    } catch {
-      // Direct access may be blocked by CORS (tainted canvas)
+    } catch (directErr) {
+      logDebug(`Method 1 direct image decode failed: ${directErr}`);
       decoded = null;
     }
 
@@ -782,11 +959,17 @@
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             ctx.drawImage(tabImg, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-            decoded = decodeQrWithMultiPass(canvas);
+            try {
+              const tabData = ctx.getImageData(0, 0, cropW, cropH);
+              decoded = decodeQrWithMultiPass(tabData);
+            } catch (tabCropErr) {
+              logDebug(`Method 2 tab screenshot crop getImageData error: ${tabCropErr}`);
+              decoded = null;
+            }
           }
         }
       } catch (fallbackErr) {
-        console.error('[QR Snip] Fallback direct image crop failed:', fallbackErr);
+        logDebug(`Fallback direct image crop failed: ${fallbackErr}`);
       }
     }
 
