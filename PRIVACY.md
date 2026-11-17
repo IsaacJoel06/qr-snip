@@ -24,4 +24,4 @@ QR Snip requests the minimum permissions required to perform its functions:
 
 ## 4. Updates & Inquiries
 For questions or source code verification, visit the project repository on GitHub:
-https://github.com/IsaacJoelMithran/qr-snip
+https://github.com/IsaacJoel06/qr-snip

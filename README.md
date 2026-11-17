@@ -41,7 +41,7 @@ A fast, lightweight, privacy-focused WebExtension (Manifest V3) that scans any Q
 ### Google Chrome / Microsoft Edge
 1. Clone or download this repository:
    ```bash
-   git clone https://github.com/IsaacJoelMithran/qr-snip.git
+   git clone https://github.com/IsaacJoel06/qr-snip.git
    ```
 2. Navigate to `chrome://extensions/` (or `edge://extensions/`).
 3. Toggle on **Developer mode** in the top-right corner.
