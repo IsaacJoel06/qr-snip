@@ -82,7 +82,13 @@ A fast, lightweight, privacy-focused WebExtension (Manifest V3) that scans any Q
 A complete testing guide with an interactive checklist is available in [TESTING.md](TESTING.md). Open [test.html](test.html) directly in any browser to verify all features.
 
 ---
+## Known issues
 
+- **Firefox for Android / mobile mode:** scanning is unreliable right now. On
+  some pages the selected area doesn't match what gets scanned, and some QR
+  codes aren't recognized. Chrome-based browsers on desktop work best. I'm currently
+  working on a fix.
+  
 ## Privacy & Security
 
 - **Zero Data Collection:** QR Snip does not track, collect, or transmit any user information.
