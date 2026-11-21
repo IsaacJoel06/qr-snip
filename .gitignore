@@ -22,3 +22,4 @@ desktop.ini
 scratch/
 *-test-*.png
 make-test*.js
+web-ext-artifacts/
